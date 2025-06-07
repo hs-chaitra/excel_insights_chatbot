@@ -230,8 +230,149 @@ def create_visualization(df, query, chart_type=None):
     # Get numeric and categorical columns
     numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
     categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+    all_cols = df.columns.tolist()
     
     try:
+        # Handle specific analytical queries
+        
+        # 1. "How many employees are under 30" type queries
+        age_keywords = ["age", "years old"]
+        filter_keywords = ["under", "over", "above", "below", "less than", "more than", "greater than", "younger than", "older than"]
+        
+        if any(age_kw in query_lower for age_kw in age_keywords) and any(filter_kw in query_lower for filter_kw in filter_keywords):
+            # Extract the age threshold
+            import re
+            numbers = re.findall(r'\d+', query_lower)
+            if numbers:
+                threshold = int(numbers[0])
+                
+                # Find the age column
+                age_col = None
+                for col in numeric_cols:
+                    if "age" in col.lower():
+                        age_col = col
+                        break
+                
+                if age_col:
+                    # Determine the comparison operator
+                    if any(kw in query_lower for kw in ["under", "below", "less than", "younger than"]):
+                        filtered_df = df[df[age_col] < threshold]
+                        comparison = "under"
+                    else:  # over, above, more than, greater than, older than
+                        filtered_df = df[df[age_col] >= threshold]
+                        comparison = "over or equal to"
+                    
+                    count = len(filtered_df)
+                    percentage = (count / len(df)) * 100
+                    
+                    st.markdown("### Age Analysis")
+                    st.markdown(f"**{count}** employees ({percentage:.1f}% of total) are {comparison} {threshold} years old")
+                    
+                    # Show additional insights about this group
+                    if count > 0 and len(categorical_cols) > 0:
+                        # Pick a categorical column to analyze this group by (e.g., department, gender)
+                        cat_col = categorical_cols[0]  # Default to first categorical column
+                        
+                        # Try to find a more relevant categorical column
+                        for col in categorical_cols:
+                            if any(term in col.lower() for term in ["department", "gender", "role", "position", "title"]):
+                                cat_col = col
+                                break
+                        
+                        # Show breakdown by the selected categorical column
+                        breakdown = filtered_df[cat_col].value_counts().reset_index()
+                        breakdown.columns = [cat_col, 'Count']
+                        breakdown['Percentage'] = (breakdown['Count'] / count) * 100
+                        
+                        st.markdown(f"#### Breakdown by {cat_col.replace('_', ' ').title()}")
+                        st.dataframe(breakdown)
+                    
+                    return True
+        
+        # 2. "Compare salary by gender" type queries
+        comparison_keywords = ["compare", "comparison", "difference", "gap", "versus", "vs", "by"]
+        if any(kw in query_lower for kw in comparison_keywords):
+            # Find the numeric column to analyze (e.g., salary)
+            numeric_col = None
+            for col in numeric_cols:
+                if col.lower() in query_lower:
+                    numeric_col = col
+                    break
+            
+            # If no specific numeric column mentioned, try to find salary-related columns
+            if not numeric_col:
+                for col in numeric_cols:
+                    if any(term in col.lower() for term in ["salary", "income", "wage", "pay", "compensation"]):
+                        numeric_col = col
+                        break
+            
+            # Find the categorical column to group by (e.g., gender)
+            cat_col = None
+            for col in categorical_cols:
+                if col.lower() in query_lower:
+                    cat_col = col
+                    break
+            
+            # If both columns are found, perform the comparison
+            if numeric_col and cat_col:
+                # Group by the categorical column and calculate statistics
+                grouped = df.groupby(cat_col)[numeric_col].agg(['mean', 'median', 'count']).reset_index()
+                grouped.columns = [cat_col, f'Average {numeric_col}', f'Median {numeric_col}', 'Count']
+                
+                # Calculate percentage difference from the highest value
+                max_value = grouped[f'Average {numeric_col}'].max()
+                grouped['% Difference'] = ((max_value - grouped[f'Average {numeric_col}']) / max_value) * 100
+                
+                st.markdown(f"### Comparison of {numeric_col.replace('_', ' ')} by {cat_col.replace('_', ' ')}")
+                st.dataframe(grouped)
+                
+                # Create a bar chart for visual comparison
+                fig = px.bar(grouped, x=cat_col, y=f'Average {numeric_col}', 
+                           title=f'Average {numeric_col.replace("_", " ")} by {cat_col.replace("_", " ")}',
+                           text_auto='.2s')
+                st.plotly_chart(fig, use_container_width=True, key=f"salary_gender_bar_{cat_col}_{numeric_col}")
+                
+                # Add insights about the comparison
+                max_group = grouped.loc[grouped[f'Average {numeric_col}'].idxmax()][cat_col]
+                min_group = grouped.loc[grouped[f'Average {numeric_col}'].idxmin()][cat_col]
+                max_avg = grouped[f'Average {numeric_col}'].max()
+                min_avg = grouped[f'Average {numeric_col}'].min()
+                diff_pct = ((max_avg - min_avg) / max_avg) * 100
+                
+                st.markdown("### Insights")
+                st.markdown(f"- The **{max_group}** group has the highest average {numeric_col.replace('_', ' ')} at **{max_avg:.2f}**")
+                st.markdown(f"- The **{min_group}** group has the lowest average {numeric_col.replace('_', ' ')} at **{min_avg:.2f}**")
+                st.markdown(f"- The difference between the highest and lowest groups is **{diff_pct:.1f}%**")
+                
+                if diff_pct > 20:
+                    st.markdown(f"- There is a **significant gap** in {numeric_col.replace('_', ' ')} between {max_group} and {min_group}")
+                elif diff_pct > 10:
+                    st.markdown(f"- There is a **moderate gap** in {numeric_col.replace('_', ' ')} between {max_group} and {min_group}")
+                else:
+                    st.markdown(f"- There is a **small gap** in {numeric_col.replace('_', ' ')} between {max_group} and {min_group}")
+                
+                return True
+        
+        # 3. "What's the distribution of the categorical variables?" type queries
+        if "distribution" in query_lower and "categorical" in query_lower:
+            if len(categorical_cols) > 0:
+                st.markdown("### Distribution of Categorical Variables")
+                
+                # For each categorical column, show the distribution
+                for col in categorical_cols:
+                    value_counts = df[col].value_counts().reset_index()
+                    value_counts.columns = [col, 'Count']
+                    value_counts['Percentage'] = (value_counts['Count'] / len(df)) * 100
+                    
+                    st.markdown(f"#### {col.replace('_', ' ').title()}")
+                    st.dataframe(value_counts)
+                    
+                    # Create a small bar chart for each categorical variable
+                    fig = px.bar(value_counts, x=col, y='Count', 
+                               title=f'Distribution of {col.replace("_", " ").title()}')
+                    st.plotly_chart(fig, use_container_width=True, key=f"cat_dist_bar_{col}")
+                
+                return True
         # Bar Chart
         if any(word in query_lower for word in ["bar", "count", "frequency"]) or chart_type == "bar":
             if len(categorical_cols) > 0:
@@ -249,7 +390,7 @@ def create_visualization(df, query, chart_type=None):
                 fig = px.bar(value_counts, 
                            x=col_to_plot, y='count',
                            title=f'Count of {col_to_plot.replace("_", " ").title()}')
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key=f"bar_chart_{col_to_plot}")
                 
                 # Add text-based insights for the bar chart
                 st.markdown("### Actionable Insights:")
@@ -313,7 +454,7 @@ def create_visualization(df, query, chart_type=None):
             # Create histogram for the selected column
             fig = px.histogram(df, x=col_to_plot, 
                              title=f'Distribution of {col_to_plot.replace("_", " ").title()}')
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key=f"hist_chart_{col_to_plot}")
             
             # Add text-based insights for the distribution
             st.markdown("### Actionable Insights:")
@@ -379,7 +520,7 @@ def create_visualization(df, query, chart_type=None):
                 
                 fig = px.scatter(df, x=x_col, y=y_col,
                                title=f'{y_col.replace("_", " ").title()} vs {x_col.replace("_", " ").title()}')
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key=f"scatter_chart_{x_col}_{y_col}")
                 
                 # Add text-based insights for the scatter plot
                 st.markdown("### Actionable Insights:")
@@ -452,7 +593,7 @@ def create_visualization(df, query, chart_type=None):
                     fig = px.line(df.reset_index(), x='index', y=y_col,
                                 title=f'{y_col.replace("_", " ").title()} Trend')
                 
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key=f"line_chart_{y_col}")
                 
                 # Add text-based insights for the line chart
                 st.markdown("### Actionable Insights:")
@@ -494,52 +635,171 @@ def create_visualization(df, query, chart_type=None):
         # Box Plot
         elif any(word in query_lower for word in ["box", "outlier"]) or chart_type == "box":
             if len(numeric_cols) > 0:
+                # Find the numeric column to plot
                 col_to_plot = numeric_cols[0]
                 for col in numeric_cols:
                     if col in query_lower:
                         col_to_plot = col
                         break
                 
-                fig = px.box(df, y=col_to_plot,
-                           title=f'Box Plot of {col_to_plot.replace("_", " ").title()}')
-                st.plotly_chart(fig, use_container_width=True)
+                # Check if we should group by a categorical column
+                group_by_col = None
+                if "by" in query_lower and len(categorical_cols) > 0:
+                    # Try to find the categorical column mentioned after "by"
+                    query_parts = query_lower.split("by")
+                    if len(query_parts) > 1:
+                        after_by = query_parts[1].strip()
+                        for col in categorical_cols:
+                            if col.lower() in after_by:
+                                group_by_col = col
+                                break
+                    
+                    # If no specific column found, use the first categorical column
+                    if not group_by_col and "department" in categorical_cols:
+                        group_by_col = "department"
+                    elif not group_by_col and len(categorical_cols) > 0:
+                        group_by_col = categorical_cols[0]
+                
+                # Display debug information
+                st.markdown("### Debug Information")
+                st.write(f"Numeric column to plot: {col_to_plot}")
+                if group_by_col:
+                    st.write(f"Grouping by: {group_by_col}")
+                    st.write(f"Unique values in {group_by_col}: {df[group_by_col].unique()}")
+                st.write(f"Data type of {col_to_plot}: {df[col_to_plot].dtype}")
+                
+                # Create a simpler box plot using px.box
+                try:
+                    if group_by_col:
+                        # Grouped box plot
+                        fig = px.box(
+                            df, 
+                            x=group_by_col, 
+                            y=col_to_plot,
+                            title=f'Box Plot of {col_to_plot.replace("_", " ").title()} by {group_by_col.replace("_", " ").title()}',
+                            points="outliers"  # Only show outlier points
+                        )
+                    else:
+                        # Simple box plot
+                        fig = px.box(
+                     df, 
+                                   y=col_to_plot,
+                            title=f'Box Plot of {col_to_plot.replace("_", " ").title()}',
+                            points="outliers"  # Only show outlier points
+                        )
+                    
+                    # Display the plot
+                    st.plotly_chart(fig, use_container_width=True, key=f"box_plot_{col_to_plot}_{group_by_col if group_by_col else 'single'}")
+                    
+                    # If we get here, the plot was created successfully
+                    st.success("Box plot created successfully!")
+                    
+                except Exception as e:
+                    # If there's an error, show it
+                    st.error(f"Error creating box plot: {str(e)}")
+                                    # Try a fallback approach with a histogram
+                    st.warning("Falling back to histogram visualization")
+                    fallback_fig = px.histogram(
+    
+                        df, 
+                        x=col_to_plot,
+                        title=f'Histogram of {col_to_plot.replace("_", " ").title()} (Box Plot Fallback)'
+                    )
+                    st.plotly_chart(fallback_fig, use_container_width=True)
                 
                 # Add text-based insights for the box plot
                 st.markdown("### Actionable Insights:")
                 
-                # Calculate key statistics
-                q1 = df[col_to_plot].quantile(0.25)
-                q3 = df[col_to_plot].quantile(0.75)
-                median = df[col_to_plot].median()
-                iqr = q3 - q1
-                lower_bound = q1 - 1.5 * iqr
-                upper_bound = q3 + 1.5 * iqr
-                outliers = df[(df[col_to_plot] < lower_bound) | (df[col_to_plot] > upper_bound)]
+                # Explanation of how to read a box plot
+                st.markdown("""
+                #### How to Read This Box Plot:
+                - **Median Line**: The middle line within each box represents the median value
+                - **Box Height**: The box represents the middle 50% of the data (Interquartile Range or IQR)
+                - **Whiskers**: The lines extending from the box show values within 1.5 × IQR
+                - **Points**: Individual points beyond the whiskers represent outliers
+                """)
                 
-                st.markdown(f"- The median {col_to_plot.replace('_', ' ')} is **{median:.2f}**")
-                st.markdown(f"- The interquartile range (IQR) is **{iqr:.2f}**")
-                st.markdown(f"- The middle 50% of values fall between **{q1:.2f}** and **{q3:.2f}**")
-                
-                # Outlier analysis
-                if len(outliers) > 0:
-                    outlier_pct = (len(outliers) / len(df)) * 100
-                    st.markdown(f"- There are **{len(outliers)}** outliers ({outlier_pct:.1f}% of the data)")
+                # Different insights based on whether we have a grouped box plot or not
+                if group_by_col:
+                    # Grouped box plot insights
+                    st.markdown("#### Key Findings:")
                     
+                    # Calculate statistics for each group
+                    group_stats = df.groupby(group_by_col)[col_to_plot].agg(['median', 'mean', 'std', 'min', 'max']).reset_index()
+                    
+                    # Find group with highest and lowest median
+                    highest_group = group_stats.loc[group_stats['median'].idxmax()]
+                    lowest_group = group_stats.loc[group_stats['median'].idxmin()]
+                    
+                    # Calculate overall statistics for comparison
+                    overall_median = df[col_to_plot].median()
+                    overall_mean = df[col_to_plot].mean()
+                    
+                    # Display insights
+                    st.markdown(f"- **{highest_group[group_by_col]}** has the highest median {col_to_plot.replace('_', ' ')} at **{highest_group['median']:.2f}**")
+                    st.markdown(f"- **{lowest_group[group_by_col]}** has the lowest median {col_to_plot.replace('_', ' ')} at **{lowest_group['median']:.2f}**")
+                    
+                    # Calculate the percentage difference between highest and lowest
+                    if lowest_group['median'] > 0:  # Avoid division by zero
+                        pct_diff = ((highest_group['median'] - lowest_group['median']) / lowest_group['median']) * 100
+                        st.markdown(f"- The difference between highest and lowest median is **{pct_diff:.1f}%**")
+                    
+                    # Find group with highest variability
+                    if 'std' in group_stats.columns:
+                        highest_var_group = group_stats.loc[group_stats['std'].idxmax()]
+                        st.markdown(f"- **{highest_var_group[group_by_col]}** shows the most variability in {col_to_plot.replace('_', ' ')}")
+                    
+                    # Create a table with group statistics
+                    st.markdown("#### Detailed Statistics by Group:")
+                    
+                    # Format the statistics table
+                    display_stats = group_stats.copy()
+                    display_stats.columns = [group_by_col, 'Median', 'Mean', 'Std Dev', 'Min', 'Max']
+                    display_stats = display_stats.sort_values('Median', ascending=False)
+                    
+                    # Round numeric columns to 2 decimal places
+                    for col in display_stats.columns:
+                        if col != group_by_col:
+                            display_stats[col] = display_stats[col].round(2)
+                    
+                    st.dataframe(display_stats)
+                    
+                else:
+                    # Single box plot insights
+                    # Calculate key statistics
+                    q1 = df[col_to_plot].quantile(0.25)
+                    q3 = df[col_to_plot].quantile(0.75)
+                    median = df[col_to_plot].median()
+                    mean = df[col_to_plot].mean()
+                    iqr = q3 - q1
+                    lower_bound = q1 - 1.5 * iqr
+                    upper_bound = q3 + 1.5 * iqr
+                    outliers = df[(df[col_to_plot] < lower_bound) | (df[col_to_plot] > upper_bound)]
+                    
+                    st.markdown(f"- The median {col_to_plot.replace('_', ' ')} is **{median:.2f}**")
+                    st.markdown(f"- The mean {col_to_plot.replace('_', ' ')} is **{mean:.2f}**")
+                    st.markdown(f"- The interquartile range (IQR) is **{iqr:.2f}**")
+                    st.markdown(f"- The middle 50% of values fall between **{q1:.2f}** and **{q3:.2f}**")
+                    
+                    # Outlier analysis
                     if len(outliers) > 0:
+                        outlier_pct = (len(outliers) / len(df)) * 100
+                        st.markdown(f"- There are **{len(outliers)}** outliers ({outlier_pct:.1f}% of the data)")
+                        
                         if df[col_to_plot].max() > upper_bound:
                             st.markdown(f"- The maximum value **{df[col_to_plot].max():.2f}** is an outlier")
                         if df[col_to_plot].min() < lower_bound:
                             st.markdown(f"- The minimum value **{df[col_to_plot].min():.2f}** is an outlier")
-                else:
-                    st.markdown(f"- No outliers detected in {col_to_plot.replace('_', ' ')}")
-                
-                # Distribution shape
-                skew = df[col_to_plot].skew()
-                if abs(skew) > 1:
-                    skew_direction = "right" if skew > 0 else "left"
-                    st.markdown(f"- The distribution is skewed to the **{skew_direction}** (skewness: {skew:.2f})")
-                else:
-                    st.markdown(f"- The distribution is approximately **symmetric** (skewness: {skew:.2f})")
+                    else:
+                        st.markdown(f"- No outliers detected in {col_to_plot.replace('_', ' ')}")
+                    
+                    # Distribution shape
+                    skew = df[col_to_plot].skew()
+                    if abs(skew) > 1:
+                        skew_direction = "right" if skew > 0 else "left"
+                        st.markdown(f"- The distribution is skewed to the **{skew_direction}** (skewness: {skew:.2f})")
+                    else:
+                        st.markdown(f"- The distribution is approximately **symmetric** (skewness: {skew:.2f})")
                 
                 return True
         
@@ -553,9 +813,23 @@ def create_visualization(df, query, chart_type=None):
                         break
                 
                 value_counts = df[col_to_plot].value_counts()
-                fig = px.pie(values=value_counts.values, names=value_counts.index,
-                           title=f'Distribution of {col_to_plot.replace("_", " ").title()}')
-                st.plotly_chart(fig, use_container_width=True)
+                # Create a pie chart with improved appearance
+                fig = px.pie(
+                    values=value_counts.values, 
+                    names=value_counts.index,
+                    title=f'Distribution of {col_to_plot.replace("_", " ").title()}',
+                    hole=0.3,  # Create a donut chart for better appearance
+                    labels={'label': col_to_plot, 'value': 'Count'}
+                )
+                
+                # Improve the appearance of the pie chart
+                fig.update_traces(
+                    textposition='inside',
+                    textinfo='percent+label',
+                    insidetextorientation='radial'
+                )
+                
+                st.plotly_chart(fig, use_container_width=True, key=f"pie_chart_{col_to_plot}")
                 
                 # Add text-based insights for the pie chart
                 st.markdown("### Actionable Insights:")
@@ -600,9 +874,28 @@ def create_visualization(df, query, chart_type=None):
         elif any(word in query_lower for word in ["heatmap", "correlation matrix"]) or chart_type == "heatmap":
             if len(numeric_cols) >= 2:
                 corr_matrix = df[numeric_cols].corr()
-                fig = px.imshow(corr_matrix, text_auto=True, aspect="auto",
-                              title="Correlation Heatmap")
-                st.plotly_chart(fig, use_container_width=True)
+                # Create an improved heatmap with better color scale and annotations
+                fig = px.imshow(
+                    corr_matrix, 
+                    text_auto=True, 
+                    aspect="auto",
+                    title="Correlation Heatmap",
+                    color_continuous_scale='RdBu_r',  # Red-Blue scale (negative to positive)
+                    zmin=-1,  # Set minimum value
+                    zmax=1    # Set maximum value
+                )
+                
+                # Improve heatmap appearance
+                fig.update_layout(
+                    height=600,  # Taller for better visibility
+                    coloraxis_colorbar=dict(
+                        title="Correlation",
+                        tickvals=[-1, -0.5, 0, 0.5, 1],
+                        ticktext=["-1.0", "-0.5", "0", "0.5", "1.0"]
+                    )
+                )
+                
+                st.plotly_chart(fig, use_container_width=True, key="heatmap_correlation")
                 
                 # Add text-based insights for the correlation heatmap
                 st.markdown("### Actionable Insights:")
@@ -842,9 +1135,26 @@ def main():
                     "What are the key insights from this data?",
                     "Show me a bar chart of the most common values",
                     "What patterns do you see in the numeric columns?",
-                    "Are there any outliers or anomalies?",
+                    "Box plot of salary by department",
                     "Create a correlation analysis between numeric variables",
-                    "What's the distribution of the categorical variables?"
+                    "What's the distribution of the categorical variables?",
+                    "How many employees are under 30",
+                    "Compare salary by gender",
+                    "Show me a bar chart of department",
+                    "Create a histogram of annual_salary",
+                    "Show a pie chart of performance_rating",
+                    "Create a histogram of age",
+                    "Show remote_work distribution",
+                    "annual_salary by department",
+                    "Compare annual_salary by gender",
+                    "Scatter plot of years_of_experience vs annual_salary",
+                    "Show annual_salary by education_level",
+                    "Create a histogram of bonus_amount",
+                    "Performance_rating by department",
+                    "Scatter plot of training_hours vs customer_satisfaction_score",
+                    "Show projects_completed distribution",
+                    "customer_satisfaction_score by performance_rating",
+                    "Sales_target_achievement_percent by department"
                 ]
                 
                 cols = st.columns(2)
@@ -861,9 +1171,148 @@ def main():
                 )
                 
                 if user_query:
+                    # Display the user's question prominently
+                    st.markdown(f"### 🔍 Your Question:")
+                    st.markdown(f"**{user_query}**")
+                    st.markdown("---")
+                    
                     with st.spinner("🤖 Analyzing your data..."):
                         # Try to create visualization first
                         viz_created = create_visualization(df, user_query)
+                        
+                        # Direct data analysis for specific queries
+                        direct_analysis_provided = False
+                        
+                        query_lower = user_query.lower()
+                        
+                        # Split the query into multiple parts if it contains commas
+                        query_parts = [q.strip() for q in query_lower.split(',')]
+                        
+                        # Display header only once
+                        header_displayed = False
+                        
+                        # Process each query part
+                        for query_part in query_parts:
+                            # 1. Check for age-related queries
+                            if any(term in query_part for term in ["under 30", "younger than 30", "below 30", "less than 30"]):
+                                # Find age column
+                                age_col = None
+                                for col in df.columns:
+                                    if "age" in col.lower():
+                                        age_col = col
+                                        break
+                                
+                                if age_col:
+                                    count_under_30 = len(df[df[age_col] < 30])
+                                    percentage = (count_under_30 / len(df)) * 100
+                                    
+                                    if not header_displayed:
+                                        st.markdown("### 📊 Direct Data Analysis")
+                                        header_displayed = True
+                                    
+                                    st.markdown("#### Employees Under 30")
+                                    st.markdown(f"**{count_under_30}** employees ({percentage:.1f}% of total) are under 30 years old")
+                                    
+                                    # Show breakdown by department or another categorical column if available
+                                    categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+                                    if categorical_cols:
+                                        # Try to find a relevant categorical column
+                                        cat_col = categorical_cols[0]  # Default
+                                        for col in categorical_cols:
+                                            if any(term in col.lower() for term in ["department", "gender", "role", "position"]):
+                                                cat_col = col
+                                                break
+                                        
+                                        # Show breakdown
+                                        under_30_df = df[df[age_col] < 30]
+                                        breakdown = under_30_df[cat_col].value_counts().reset_index()
+                                        breakdown.columns = [cat_col, 'Count']
+                                        breakdown['Percentage'] = (breakdown['Count'] / count_under_30) * 100
+                                        
+                                        st.markdown(f"##### Breakdown of employees under 30 by {cat_col.replace('_', ' ').title()}")
+                                        st.dataframe(breakdown)
+                                    
+                                    direct_analysis_provided = True
+                            
+                            # 2. Check for salary comparison by gender queries
+                            if "compare" in query_part and "gender" in query_part and any(term in query_part for term in ["salary", "income", "pay", "wage"]) or \
+                               ("salary" in query_part and "gender" in query_part):
+                                # Find salary column
+                                salary_col = None
+                                for col in df.columns:
+                                    if any(term in col.lower() for term in ["salary", "income", "pay", "wage", "compensation"]):
+                                        salary_col = col
+                                        break
+                                
+                                # Find gender column
+                                gender_col = None
+                                for col in df.columns:
+                                    if "gender" in col.lower():
+                                        gender_col = col
+                                        break
+                                
+                                if salary_col and gender_col:
+                                    # Group by gender and calculate statistics
+                                    grouped = df.groupby(gender_col)[salary_col].agg(['mean', 'median', 'count']).reset_index()
+                                    grouped.columns = [gender_col, f'Average {salary_col}', f'Median {salary_col}', 'Count']
+                                    
+                                    # Calculate percentage difference from the highest value
+                                    max_value = grouped[f'Average {salary_col}'].max()
+                                    grouped['% Difference'] = ((max_value - grouped[f'Average {salary_col}']) / max_value) * 100
+                                    
+                                    if not header_displayed:
+                                        st.markdown("### 📊 Direct Data Analysis")
+                                        header_displayed = True
+                                    
+                                    st.markdown(f"#### Comparison of {salary_col.replace('_', ' ')} by {gender_col.replace('_', ' ')}")
+                                    st.dataframe(grouped)
+                                    
+                                    # Create a bar chart for visual comparison
+                                    fig = px.bar(grouped, x=gender_col, y=f'Average {salary_col}', 
+                                               title=f'Average {salary_col.replace("_", " ")} by {gender_col.replace("_", " ")}',
+                                               text_auto='.2s')
+                                    st.plotly_chart(fig, use_container_width=True)
+                                    
+                                    # Add insights about the comparison
+                                    max_group = grouped.loc[grouped[f'Average {salary_col}'].idxmax()][gender_col]
+                                    min_group = grouped.loc[grouped[f'Average {salary_col}'].idxmin()][gender_col]
+                                    max_avg = grouped[f'Average {salary_col}'].max()
+                                    min_avg = grouped[f'Average {salary_col}'].min()
+                                    diff_pct = ((max_avg - min_avg) / max_avg) * 100
+                                    
+                                    st.markdown("##### Insights")
+                                    st.markdown(f"- The **{max_group}** group has the highest average {salary_col.replace('_', ' ')} at **{max_avg:.2f}**")
+                                    st.markdown(f"- The **{min_group}** group has the lowest average {salary_col.replace('_', ' ')} at **{min_avg:.2f}**")
+                                    st.markdown(f"- The difference between the highest and lowest groups is **{diff_pct:.1f}%**")
+                                    
+                                    direct_analysis_provided = True
+                            
+                            # 3. Check for categorical distribution queries
+                            if "distribution" in query_part and "categorical" in query_part:
+                                categorical_cols = df.select_dtypes(include=['object']).columns.tolist()
+                                
+                                if categorical_cols:
+                                    if not header_displayed:
+                                        st.markdown("### 📊 Direct Data Analysis")
+                                        header_displayed = True
+                                    
+                                    st.markdown("#### Distribution of Categorical Variables")
+                                    
+                                    # For each categorical column, show the distribution
+                                    for col in categorical_cols:
+                                        value_counts = df[col].value_counts().reset_index()
+                                        value_counts.columns = [col, 'Count']
+                                        value_counts['Percentage'] = (value_counts['Count'] / len(df)) * 100
+                                        
+                                        st.markdown(f"##### {col.replace('_', ' ').title()}")
+                                        st.dataframe(value_counts)
+                                        
+                                        # Create a small bar chart for each categorical variable
+                                        fig = px.bar(value_counts, x=col, y='Count', 
+                                                   title=f'Distribution of {col.replace("_", " ").title()}')
+                                        st.plotly_chart(fig, use_container_width=True)
+                                    
+                                    direct_analysis_provided = True
                         
                         # Get AI response or fallback to basic insights
                         ai_response = ask_groq(user_query, str(data_summary), sample_data)
@@ -876,7 +1325,8 @@ def main():
                             st.markdown("### 📊 Basic Data Insights")
                             st.markdown(basic_insights)
                         else:
-                            st.markdown("### 🤖 AI Analysis")
+                            if not direct_analysis_provided:
+                                st.markdown("### 🤖 AI Analysis")
                             st.markdown(ai_response)
                         
                         if viz_created:

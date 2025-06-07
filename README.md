@@ -60,6 +60,34 @@ This will open the application in your web browser.
 
 Once the application is running, you can upload your Excel file using the "Choose your Excel file" button in the sidebar.
 
+### Example Queries
+
+Here are some example questions you can ask the chatbot:
+
+*   "What are the key insights from this data?"
+*   "Show me a bar chart of the most common values"
+*   "What patterns do you see in the numeric columns?"
+*   "Box plot of salary by department"
+*   "Create a correlation analysis between numeric variables"
+*   "What's the distribution of the categorical variables?"
+*   "How many employees are under 30"
+*   "Compare salary by gender"
+*   "Show me a bar chart of department"
+*   "Create a histogram of annual_salary"
+*   "Show a pie chart of performance_rating"
+*   "Create a histogram of age"
+*   "Show remote_work distribution"
+*   "annual_salary by department"
+*   "Compare annual_salary by gender"
+*   "Scatter plot of years_of_experience vs annual_salary"
+*   "Show annual_salary by education_level"
+*   "Create a histogram of bonus_amount"
+*   "Performance_rating by department"
+*   "Scatter plot of training_hours vs customer_satisfaction_score"
+*   "Show projects_completed distribution"
+*   "customer_satisfaction_score by performance_rating"
+*   "Sales_target_achievement_percent by department"
+
 ## Project Structure
 
 *   `app.py`: The main Streamlit application script containing the chatbot logic, data processing, visualization functions, and AI integration.
@@ -67,20 +95,7 @@ Once the application is running, you can upload your Excel file using the "Choos
 *   `.env.example`: An example file for setting up environment variables, specifically for the Groq API key.
 *   `.gitignore`: Specifies intentionally untracked files that Git should ignore.
 
-## Dependencies
-
-The project relies on the following Python libraries:
-
-*   `streamlit`: For building interactive web applications.
-*   `pandas`: For data manipulation and analysis.
-*   `numpy`: For numerical operations.
-*   `plotly`: For creating interactive visualizations.
-*   `openpyxl`: For reading and writing Excel files.
-*   `groq`: For integrating with the Groq AI API.
-*   `python-dotenv`: For managing environment variables.
-*   `matplotlib`: For basic plotting.
-*   `seaborn`: For statistical data visualization.
-*   `requests`: For making HTTP requests to the Groq API.
+a
 
 ## Deployment on Streamlit Cloud
 
