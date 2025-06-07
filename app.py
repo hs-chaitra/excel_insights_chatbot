@@ -250,21 +250,122 @@ def create_visualization(df, query, chart_type=None):
                            x=col_to_plot, y='count',
                            title=f'Count of {col_to_plot.replace("_", " ").title()}')
                 st.plotly_chart(fig, use_container_width=True)
+                
+                # Add text-based insights for the bar chart
+                st.markdown("### Actionable Insights:")
+                
+                total = len(df)
+                
+                # Most common category
+                most_common = value_counts.iloc[0][col_to_plot]
+                most_common_count = value_counts.iloc[0]['count']
+                most_common_pct = (most_common_count / total) * 100
+                
+                st.markdown(f"- The most common {col_to_plot.replace('_', ' ')} is **{most_common}** with **{most_common_count}** occurrences ({most_common_pct:.1f}%)")
+                
+                # Least common category
+                least_common = value_counts.iloc[-1][col_to_plot]
+                least_common_count = value_counts.iloc[-1]['count']
+                least_common_pct = (least_common_count / total) * 100
+                
+                st.markdown(f"- The least common {col_to_plot.replace('_', ' ')} is **{least_common}** with **{least_common_count}** occurrences ({least_common_pct:.1f}%)")
+                
+                # Distribution analysis
+                if len(value_counts) > 1:
+                    # Calculate diversity ratio (how evenly distributed the categories are)
+                    evenness = value_counts.iloc[-1]['count'] / value_counts.iloc[0]['count']
+                    
+                    if evenness < 0.2:
+                        st.markdown(f"- The distribution is **highly skewed** with significant imbalance between categories")
+                    elif evenness < 0.5:
+                        st.markdown(f"- The distribution is **moderately skewed** across categories")
+                    else:
+                        st.markdown(f"- The distribution is **relatively balanced** across categories")
+                
+                # Category count insight
+                if len(value_counts) > 5:
+                    st.markdown(f"- There are **{len(value_counts)}** unique values in {col_to_plot.replace('_', ' ')}, suggesting high diversity")
+                elif len(value_counts) > 2:
+                    st.markdown(f"- There are **{len(value_counts)}** different categories in {col_to_plot.replace('_', ' ')}")
+                else:
+                    st.markdown(f"- {col_to_plot.replace('_', ' ')} has only **{len(value_counts)}** distinct values")
+                
                 return True
         
         # Histogram
         elif any(word in query_lower for word in ["histogram", "distribution"]) or chart_type == "histogram":
-            if len(numeric_cols) > 0:
+            # First check all columns for a match in the query
+            all_cols = df.columns.tolist()
+            col_to_plot = None
+            
+            # Check if any column is mentioned in the query
+            for col in all_cols:
+                if col.lower() in query_lower:
+                    col_to_plot = col
+                    break
+            
+            # If no column was found in the query, default to first numeric column
+            if col_to_plot is None and len(numeric_cols) > 0:
                 col_to_plot = numeric_cols[0]
-                for col in numeric_cols:
-                    if col in query_lower:
-                        col_to_plot = col
-                        break
+            elif col_to_plot is None and len(df.columns) > 0:
+                col_to_plot = df.columns[0]
+            
+            # Create histogram for the selected column
+            fig = px.histogram(df, x=col_to_plot, 
+                             title=f'Distribution of {col_to_plot.replace("_", " ").title()}')
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Add text-based insights for the distribution
+            st.markdown("### Actionable Insights:")
+            
+            if col_to_plot in numeric_cols:
+                # For numeric columns
+                mean_val = df[col_to_plot].mean()
+                median_val = df[col_to_plot].median()
+                min_val = df[col_to_plot].min()
+                max_val = df[col_to_plot].max()
                 
-                fig = px.histogram(df, x=col_to_plot, 
-                                 title=f'Distribution of {col_to_plot.replace("_", " ").title()}')
-                st.plotly_chart(fig, use_container_width=True)
-                return True
+                st.markdown(f"- The average {col_to_plot.replace('_', ' ')} is **{mean_val:.2f}**")
+                st.markdown(f"- The median {col_to_plot.replace('_', ' ')} is **{median_val:.2f}**")
+                st.markdown(f"- The range is from **{min_val:.2f}** to **{max_val:.2f}**")
+                
+                # Check for skewness
+                skew = df[col_to_plot].skew()
+                if abs(skew) > 1:
+                    skew_direction = "right" if skew > 0 else "left"
+                    st.markdown(f"- The distribution is skewed to the **{skew_direction}** (skewness: {skew:.2f})")
+                else:
+                    st.markdown(f"- The distribution is approximately **symmetric** (skewness: {skew:.2f})")
+            else:
+                # For categorical columns
+                value_counts = df[col_to_plot].value_counts()
+                total = len(df)
+                
+                # Most common value
+                most_common = value_counts.index[0]
+                most_common_count = value_counts.iloc[0]
+                most_common_pct = (most_common_count / total) * 100
+                
+                st.markdown(f"- The most common {col_to_plot.replace('_', ' ')} is **{most_common}** with **{most_common_count}** occurrences ({most_common_pct:.1f}%)")
+                
+                # Least common value
+                least_common = value_counts.index[-1]
+                least_common_count = value_counts.iloc[-1]
+                least_common_pct = (least_common_count / total) * 100
+                
+                st.markdown(f"- The least common {col_to_plot.replace('_', ' ')} is **{least_common}** with **{least_common_count}** occurrences ({least_common_pct:.1f}%)")
+                
+                # Distribution evenness
+                if len(value_counts) > 1:
+                    evenness = value_counts.iloc[-1] / value_counts.iloc[0]
+                    if evenness < 0.2:
+                        st.markdown(f"- The distribution is **highly uneven** with significant imbalance between categories")
+                    elif evenness < 0.5:
+                        st.markdown(f"- The distribution is **moderately uneven** across categories")
+                    else:
+                        st.markdown(f"- The distribution is **relatively balanced** across categories")
+            
+            return True
         
         # Scatter Plot
         elif any(word in query_lower for word in ["scatter", "relationship", "correlation"]) or chart_type == "scatter":
@@ -277,8 +378,54 @@ def create_visualization(df, query, chart_type=None):
                     x_col, y_col = mentioned_cols[0], mentioned_cols[1]
                 
                 fig = px.scatter(df, x=x_col, y=y_col,
-                               title=f'{y_col.replace("", " ").title()} vs {x_col.replace("", " ").title()}')
+                               title=f'{y_col.replace("_", " ").title()} vs {x_col.replace("_", " ").title()}')
                 st.plotly_chart(fig, use_container_width=True)
+                
+                # Add text-based insights for the scatter plot
+                st.markdown("### Actionable Insights:")
+                
+                # Calculate correlation
+                correlation = df[x_col].corr(df[y_col])
+                
+                # Describe the correlation strength
+                if abs(correlation) < 0.3:
+                    strength = "weak"
+                elif abs(correlation) < 0.7:
+                    strength = "moderate"
+                else:
+                    strength = "strong"
+                
+                # Describe the direction
+                direction = "positive" if correlation > 0 else "negative"
+                
+                st.markdown(f"- There is a **{strength} {direction}** correlation between {x_col.replace('_', ' ')} and {y_col.replace('_', ' ')} (r = {correlation:.3f})")
+                
+                # Additional insights based on correlation
+                if abs(correlation) > 0.7:
+                    st.markdown(f"- The **{strength}** relationship suggests that changes in {x_col.replace('_', ' ')} are closely related to changes in {y_col.replace('_', ' ')}")
+                    
+                    if correlation > 0:
+                        st.markdown(f"- As {x_col.replace('_', ' ')} increases, {y_col.replace('_', ' ')} tends to increase as well")
+                    else:
+                        st.markdown(f"- As {x_col.replace('_', ' ')} increases, {y_col.replace('_', ' ')} tends to decrease")
+                elif abs(correlation) > 0.3:
+                    st.markdown(f"- The **{strength}** relationship suggests some connection between {x_col.replace('_', ' ')} and {y_col.replace('_', ' ')}")
+                else:
+                    st.markdown(f"- There appears to be little relationship between {x_col.replace('_', ' ')} and {y_col.replace('_', ' ')}")
+                
+                # Check for outliers
+                x_q1, x_q3 = np.percentile(df[x_col], [25, 75])
+                y_q1, y_q3 = np.percentile(df[y_col], [25, 75])
+                x_iqr = x_q3 - x_q1
+                y_iqr = y_q3 - y_q1
+                
+                x_outliers = df[(df[x_col] < x_q1 - 1.5 * x_iqr) | (df[x_col] > x_q3 + 1.5 * x_iqr)]
+                y_outliers = df[(df[y_col] < y_q1 - 1.5 * y_iqr) | (df[y_col] > y_q3 + 1.5 * y_iqr)]
+                
+                if len(x_outliers) > 0 or len(y_outliers) > 0:
+                    st.markdown(f"- There are **{len(x_outliers)}** outliers in {x_col.replace('_', ' ')} and **{len(y_outliers)}** outliers in {y_col.replace('_', ' ')}")
+                    st.markdown(f"- Outliers may affect the correlation and should be examined")
+                
                 return True
         
         # Line Chart
@@ -306,6 +453,42 @@ def create_visualization(df, query, chart_type=None):
                                 title=f'{y_col.replace("_", " ").title()} Trend')
                 
                 st.plotly_chart(fig, use_container_width=True)
+                
+                # Add text-based insights for the line chart
+                st.markdown("### Actionable Insights:")
+                
+                # Calculate basic statistics
+                mean_val = df[y_col].mean()
+                min_val = df[y_col].min()
+                max_val = df[y_col].max()
+                range_val = max_val - min_val
+                
+                st.markdown(f"- The average {y_col.replace('_', ' ')} is **{mean_val:.2f}**")
+                st.markdown(f"- The range is from **{min_val:.2f}** to **{max_val:.2f}** (range: {range_val:.2f})")
+                
+                # Calculate trend
+                if len(df) > 1:
+                    first_half = df[y_col].iloc[:len(df)//2].mean()
+                    second_half = df[y_col].iloc[len(df)//2:].mean()
+                    
+                    if second_half > first_half * 1.05:
+                        st.markdown(f"- There is an **increasing trend** in {y_col.replace('_', ' ')} over the sequence")
+                    elif second_half < first_half * 0.95:
+                        st.markdown(f"- There is a **decreasing trend** in {y_col.replace('_', ' ')} over the sequence")
+                    else:
+                        st.markdown(f"- {y_col.replace('_', ' ')} remains **relatively stable** over the sequence")
+                
+                # Check for volatility
+                std_dev = df[y_col].std()
+                cv = (std_dev / mean_val) * 100  # Coefficient of variation
+                
+                if cv > 50:
+                    st.markdown(f"- The data shows **high volatility** with a coefficient of variation of {cv:.1f}%")
+                elif cv > 20:
+                    st.markdown(f"- The data shows **moderate volatility** with a coefficient of variation of {cv:.1f}%")
+                else:
+                    st.markdown(f"- The data shows **low volatility** with a coefficient of variation of {cv:.1f}%")
+                
                 return True
         
         # Box Plot
@@ -320,6 +503,44 @@ def create_visualization(df, query, chart_type=None):
                 fig = px.box(df, y=col_to_plot,
                            title=f'Box Plot of {col_to_plot.replace("_", " ").title()}')
                 st.plotly_chart(fig, use_container_width=True)
+                
+                # Add text-based insights for the box plot
+                st.markdown("### Actionable Insights:")
+                
+                # Calculate key statistics
+                q1 = df[col_to_plot].quantile(0.25)
+                q3 = df[col_to_plot].quantile(0.75)
+                median = df[col_to_plot].median()
+                iqr = q3 - q1
+                lower_bound = q1 - 1.5 * iqr
+                upper_bound = q3 + 1.5 * iqr
+                outliers = df[(df[col_to_plot] < lower_bound) | (df[col_to_plot] > upper_bound)]
+                
+                st.markdown(f"- The median {col_to_plot.replace('_', ' ')} is **{median:.2f}**")
+                st.markdown(f"- The interquartile range (IQR) is **{iqr:.2f}**")
+                st.markdown(f"- The middle 50% of values fall between **{q1:.2f}** and **{q3:.2f}**")
+                
+                # Outlier analysis
+                if len(outliers) > 0:
+                    outlier_pct = (len(outliers) / len(df)) * 100
+                    st.markdown(f"- There are **{len(outliers)}** outliers ({outlier_pct:.1f}% of the data)")
+                    
+                    if len(outliers) > 0:
+                        if df[col_to_plot].max() > upper_bound:
+                            st.markdown(f"- The maximum value **{df[col_to_plot].max():.2f}** is an outlier")
+                        if df[col_to_plot].min() < lower_bound:
+                            st.markdown(f"- The minimum value **{df[col_to_plot].min():.2f}** is an outlier")
+                else:
+                    st.markdown(f"- No outliers detected in {col_to_plot.replace('_', ' ')}")
+                
+                # Distribution shape
+                skew = df[col_to_plot].skew()
+                if abs(skew) > 1:
+                    skew_direction = "right" if skew > 0 else "left"
+                    st.markdown(f"- The distribution is skewed to the **{skew_direction}** (skewness: {skew:.2f})")
+                else:
+                    st.markdown(f"- The distribution is approximately **symmetric** (skewness: {skew:.2f})")
+                
                 return True
         
         # Pie Chart
@@ -335,6 +556,44 @@ def create_visualization(df, query, chart_type=None):
                 fig = px.pie(values=value_counts.values, names=value_counts.index,
                            title=f'Distribution of {col_to_plot.replace("_", " ").title()}')
                 st.plotly_chart(fig, use_container_width=True)
+                
+                # Add text-based insights for the pie chart
+                st.markdown("### Actionable Insights:")
+                
+                total = len(df)
+                
+                # Calculate percentages for top categories
+                top_categories = value_counts.head(3)
+                top_percentages = [(cat, count, (count/total)*100) for cat, count in top_categories.items()]
+                
+                # Most common category
+                if len(top_percentages) > 0:
+                    most_common, most_count, most_pct = top_percentages[0]
+                    st.markdown(f"- The most common {col_to_plot.replace('_', ' ')} is **{most_common}** representing **{most_pct:.1f}%** of the data")
+                
+                # Second most common (if available)
+                if len(top_percentages) > 1:
+                    second, second_count, second_pct = top_percentages[1]
+                    st.markdown(f"- The second most common is **{second}** with **{second_pct:.1f}%**")
+                
+                # Distribution analysis
+                if len(value_counts) > 1:
+                    # Calculate diversity ratio (how evenly distributed the categories are)
+                    top_two_pct = sum(pct for _, _, pct in top_percentages[:2]) if len(top_percentages) >= 2 else most_pct
+                    
+                    if top_two_pct > 80:
+                        st.markdown(f"- The distribution is **highly concentrated** with the top categories representing most of the data")
+                    elif top_two_pct > 60:
+                        st.markdown(f"- The distribution is **moderately concentrated** in the top categories")
+                    else:
+                        st.markdown(f"- The distribution is **relatively balanced** across categories")
+                
+                # Category count insight
+                if len(value_counts) > 5:
+                    st.markdown(f"- There are **{len(value_counts)}** unique values in {col_to_plot.replace('_', ' ')}")
+                    other_pct = 100 - sum(pct for _, _, pct in top_percentages[:3])
+                    st.markdown(f"- The remaining categories represent **{other_pct:.1f}%** of the data")
+                
                 return True
         
         # Heatmap (correlation matrix)
@@ -344,6 +603,50 @@ def create_visualization(df, query, chart_type=None):
                 fig = px.imshow(corr_matrix, text_auto=True, aspect="auto",
                               title="Correlation Heatmap")
                 st.plotly_chart(fig, use_container_width=True)
+                
+                # Add text-based insights for the correlation heatmap
+                st.markdown("### Actionable Insights:")
+                
+                # Find strongest positive and negative correlations
+                corr_values = corr_matrix.unstack()
+                # Remove self-correlations (which are always 1.0)
+                corr_values = corr_values[corr_values < 1.0]
+                
+                # Strongest positive correlation
+                strongest_pos = corr_values[corr_values > 0].nlargest(1)
+                if not strongest_pos.empty:
+                    col1, col2 = strongest_pos.index[0]
+                    corr_val = strongest_pos.iloc[0]
+                    st.markdown(f"- Strongest positive correlation: **{col1.replace('_', ' ')}** and **{col2.replace('_', ' ')}** (r = {corr_val:.3f})")
+                    
+                    if corr_val > 0.7:
+                        st.markdown(f"- There is a **strong positive relationship** between these variables")
+                    elif corr_val > 0.3:
+                        st.markdown(f"- There is a **moderate positive relationship** between these variables")
+                
+                # Strongest negative correlation
+                strongest_neg = corr_values[corr_values < 0].nsmallest(1)
+                if not strongest_neg.empty:
+                    col1, col2 = strongest_neg.index[0]
+                    corr_val = strongest_neg.iloc[0]
+                    st.markdown(f"- Strongest negative correlation: **{col1.replace('_', ' ')}** and **{col2.replace('_', ' ')}** (r = {corr_val:.3f})")
+                    
+                    if corr_val < -0.7:
+                        st.markdown(f"- There is a **strong negative relationship** between these variables")
+                    elif corr_val < -0.3:
+                        st.markdown(f"- There is a **moderate negative relationship** between these variables")
+                
+                # Overall correlation assessment
+                abs_corr = corr_matrix.abs()
+                mean_corr = abs_corr.mean().mean()
+                
+                if mean_corr > 0.5:
+                    st.markdown(f"- The dataset shows **strong overall correlation** between variables (avg: {mean_corr:.2f})")
+                elif mean_corr > 0.3:
+                    st.markdown(f"- The dataset shows **moderate overall correlation** between variables (avg: {mean_corr:.2f})")
+                else:
+                    st.markdown(f"- The dataset shows **weak overall correlation** between variables (avg: {mean_corr:.2f})")
+                
                 return True
         
         return False
