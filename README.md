@@ -67,7 +67,7 @@ Here are some example questions you can ask the chatbot:
 *   "What are the key insights from this data?"
 *   "Show me a bar chart of the most common values"
 *   "What patterns do you see in the numeric columns?"
-*   "Box plot of salary by department"
+*   "salary by department"
 *   "Create a correlation analysis between numeric variables"
 *   "What's the distribution of the categorical variables?"
 *   "How many employees are under 30"
